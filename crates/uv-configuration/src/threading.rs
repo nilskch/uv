@@ -1,5 +1,6 @@
 //! Configure rayon and determine thread stack sizes.
 
+use std::error::Error;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use uv_static::EnvVars;
@@ -65,5 +66,12 @@ pub static RAYON_INITIALIZE: LazyLock<()> = LazyLock::new(|| {
         .num_threads(RAYON_PARALLELISM.load(Ordering::Relaxed))
         .stack_size(min_stack_size())
         .build_global()
+        .or_else(|e| {
+            // The source of the ThreadPoolBuildError is None for
+            // ErrorKind::GlobalPoolAlreadyInitialized and ErrorKind::CurrentThreadAlreadyInPool.
+            // We don't want to throw an error in that case.
+            // https://github.com/rayon-rs/rayon/blob/ae07384e3e0b238cea89f0c14891f351c65a5cee/rayon-core/src/lib.rs#L777-L782
+            if e.source().is_none() { Ok(()) } else { Err(e) }
+        })
         .expect("failed to initialize global rayon pool");
 });
